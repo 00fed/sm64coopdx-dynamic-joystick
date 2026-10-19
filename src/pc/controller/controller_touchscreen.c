@@ -93,41 +93,35 @@ static u32 controlElementsLength = sizeof(controlElements)/sizeof(struct Control
 
 struct Position get_pos(ConfigControlElement *config) {
     struct Position ret;
-
     switch (config->anchor) {
         case CONTROL_ELEMENT_LEFT:
             ret.x = RECT_FROM_LEFT_EDGE(config->x << 2);
             ret.y = config->y;
             break;
-
         case CONTROL_ELEMENT_RIGHT:
+            // Correctly project inward from RIGHT_EDGE
             ret.x = RECT_FROM_RIGHT_EDGE(config->x << 2);
             ret.y = config->y;
             break;
-
         case CONTROL_ELEMENT_CENTER:
             ret.x = SCREEN_WIDTH_API / 2;
             ret.y = config->y;
             break;
     }
-
     if (config->hidden) {
         if (!gInTouchConfig) {
             ret.x = HIDE_POS;
             ret.y = HIDE_POS;
         }
     }
-
     if (configSnapTouch) {
         ret.x = 50 * ((ret.x + 49) / 50) - 25;
         ret.y = 50 * ((ret.y + 49) / 50) - 25;
     }
-
     if (!gInTouchConfig && (gDjuiInMainMenu && !gDjuiDisabled)) {
         ret.x = HIDE_POS;
         ret.y = HIDE_POS;
     }
-
     return ret;
 }
 
@@ -182,19 +176,26 @@ void move_touch_element(struct TouchEvent *event, enum ConfigControlElementIndex
 void touch_down(struct TouchEvent* event) {
     gGamepadActive = false;
     struct Position pos;
-    s32 size;
     s32 touchX = CORRECT_TOUCH_X(event->x);
     s32 touchY = CORRECT_TOUCH_Y(event->y);
     if (gInTouchConfig) {
-        for (u32 i = 0; i < controlElementsLength; i++) {
+        // Iterate in reverse so topmost rendered buttons receive grab priority
+        for (s32 i = (s32)controlElementsLength - 1; i >= 0; i--) {
             if (controlElements[i].touchID == 0) {
                 pos = get_pos(&configControlElements[i]);
                 if (pos.y == HIDE_POS) continue;
-                size = (s32)roundf(configControlElements[i].size * 100.0f);
-                if (!TRIGGER_DETECT(size)) continue;
-                controlElements[i].touchID = event->touchID;
-                gSelectedTouchElement = i;
-                break;
+                // Use the visual rendered texture radius (64 * size for buttons, 128 * size for stick)
+                // to eliminate deadzones at screen edges and corner boundaries
+                f32 scale = configControlElements[i].size;
+                if (scale <= 0.01f) scale = 0.01f;
+                f32 halfW = (controlElements[i].type == Joystick ? 128.0f : 64.0f) * scale;
+                f32 halfH = halfW;
+                if (touchX >= (pos.x - halfW) && touchX <= (pos.x + halfW) &&
+                    touchY >= (pos.y - halfH) && touchY <= (pos.y + halfH)) {
+                    controlElements[i].touchID = event->touchID;
+                    gSelectedTouchElement = (enum ConfigControlElementIndex)i;
+                    break;
+                }
             }
         }
         return;
@@ -204,8 +205,9 @@ void touch_down(struct TouchEvent* event) {
         if (controlElements[i].type == Button && controlElements[i].touchID == 0) {
             pos = get_pos(&configControlElements[i]);
             if (pos.y == HIDE_POS) continue;
-            size = (s32)roundf(configControlElements[i].size * 100.0f);
-            if (TRIGGER_DETECT(size)) {
+            f32 halfW = 64.0f * configControlElements[i].size;
+            if (touchX >= (pos.x - halfW) && touchX <= (pos.x + halfW) &&
+                touchY >= (pos.y - halfW) && touchY <= (pos.y + halfW)) {
                 controlElements[i].touchID = event->touchID;
                 gSelectedTouchElement = i;
                 if (controlElements[i].buttonID == CHAT_BUTTON)
@@ -217,7 +219,6 @@ void touch_down(struct TouchEvent* event) {
         }
     }
     // Pass 2: Restrict Dynamic Joystick strictly to the bottom-left quadrant
-    // (touchX < SCREEN_WIDTH_API / 2 AND touchY > SCREEN_HEIGHT_API / 2)
     pos = get_pos(&configControlElements[TOUCH_STICK]);
     if (pos.y != HIDE_POS && sJoystickTouchID == 0 &&
         touchX < (SCREEN_WIDTH_API / 2) && touchY > (SCREEN_HEIGHT_API / 2)) {
@@ -232,8 +233,6 @@ void touch_down(struct TouchEvent* event) {
         return;
     }
     // Pass 3: Global Modern Camera/Mouse Area (Fallback)
-    // Any touch outside button hitboxes and outside the bottom-left joystick zone
-    // automatically binds to camera look (Mouse), without a fixed bounding box constraint.
     if (controlElements[TOUCH_MOUSE].touchID == 0) {
         controlElements[TOUCH_MOUSE].touchID = event->touchID;
         before_x = touchX;
@@ -243,7 +242,6 @@ void touch_down(struct TouchEvent* event) {
         return;
     }
 }
-
 void touch_motion(struct TouchEvent* event) {
     struct Position pos;
     s32 size;
