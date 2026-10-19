@@ -142,6 +142,8 @@ Colors get_color(ConfigControlElement *config) {
     return ret;
 }
 
+// File: src/pc/controller/controller_touchscreen.c
+
 void move_touch_element(struct TouchEvent *event, enum ConfigControlElementIndex i) {
     ConfigControlElement *config = &configControlElements[i];
 
@@ -151,13 +153,21 @@ void move_touch_element(struct TouchEvent *event, enum ConfigControlElementIndex
     s32 x = 0;
     enum ConfigControlElementAnchor anchor;
 
+    // Clamp coordinates to the active screen area so edge buttons remain grab-able
+    if (x_raw < LEFT_EDGE) x_raw = LEFT_EDGE;
+    if (x_raw > RIGHT_EDGE) x_raw = RIGHT_EDGE;
+    if (y_raw < 0) y_raw = 0;
+    if (y_raw > SCREEN_HEIGHT_API) y_raw = SCREEN_HEIGHT_API;
+
     if (x_raw < (SCREEN_WIDTH_API / 2) - 30) {
-        x = (x_raw - RECT_FROM_LEFT_EDGE(0)) >> 2;
-        if (x < 0) x = 0;
+        // Left anchor: store positive offset from LEFT_EDGE
+        s32 diff = x_raw - RECT_FROM_LEFT_EDGE(0);
+        x = (diff > 0) ? (diff >> 2) : 0;
         anchor = CONTROL_ELEMENT_LEFT;
     } else if (x_raw > (SCREEN_WIDTH_API / 2) + 30) {
-        x = (RECT_FROM_RIGHT_EDGE(0) - x_raw) >> 2;
-        if (x < 0) x = 0;
+        // Right anchor: compute positive inward distance from RIGHT_EDGE
+        s32 diff = RECT_FROM_RIGHT_EDGE(0) - x_raw;
+        x = (diff > 0) ? (diff >> 2) : 0;
         anchor = CONTROL_ELEMENT_RIGHT;
     } else {
         x = SCREEN_WIDTH_API / 2;
@@ -175,7 +185,6 @@ void touch_down(struct TouchEvent* event) {
     s32 size;
     s32 touchX = CORRECT_TOUCH_X(event->x);
     s32 touchY = CORRECT_TOUCH_Y(event->y);
-
     if (gInTouchConfig) {
         for (u32 i = 0; i < controlElementsLength; i++) {
             if (controlElements[i].touchID == 0) {
@@ -190,9 +199,7 @@ void touch_down(struct TouchEvent* event) {
         }
         return;
     }
-
     // Pass 1: Prioritize Buttons first (A, B, X, Y, Z, L, R, D-pad, Start, Chat, etc.)
-    // Ensures touches on buttons (including those on the left) never get stolen by joystick
     for (u32 i = 0; i < controlElementsLength; i++) {
         if (controlElements[i].type == Button && controlElements[i].touchID == 0) {
             pos = get_pos(&configControlElements[i]);
@@ -209,11 +216,11 @@ void touch_down(struct TouchEvent* event) {
             }
         }
     }
-
-    // Pass 2: Joystick Activation Zone on the left half of the screen (x < SCREEN_WIDTH_API / 2)
-    // Protected by Touch ID: only activates if joystick is not already locked to an active finger
+    // Pass 2: Restrict Dynamic Joystick strictly to the bottom-left quadrant
+    // (touchX < SCREEN_WIDTH_API / 2 AND touchY > SCREEN_HEIGHT_API / 2)
     pos = get_pos(&configControlElements[TOUCH_STICK]);
-    if (pos.y != HIDE_POS && sJoystickTouchID == 0 && touchX < (SCREEN_WIDTH_API / 2)) {
+    if (pos.y != HIDE_POS && sJoystickTouchID == 0 &&
+        touchX < (SCREEN_WIDTH_API / 2) && touchY > (SCREEN_HEIGHT_API / 2)) {
         sJoystickTouchID = event->touchID;
         controlElements[TOUCH_STICK].touchID = event->touchID;
         gSelectedTouchElement = TOUCH_STICK;
@@ -224,18 +231,16 @@ void touch_down(struct TouchEvent* event) {
         controlElements[TOUCH_STICK].joyY = 0;
         return;
     }
-
-    // Pass 3: Mouse / Camera Look on right half or unhandled areas
-    for (u32 i = 0; i < controlElementsLength; i++) {
-        if (controlElements[i].type == Mouse && controlElements[i].touchID == 0) {
-            pos = get_pos(&configControlElements[i]);
-            if (pos.y == HIDE_POS) continue;
-            size = (s32)roundf(configControlElements[i].size * 100.0f);
-            if (TRIGGER_DETECT(size)) {
-                controlElements[i].touchID = event->touchID;
-                return;
-            }
-        }
+    // Pass 3: Global Modern Camera/Mouse Area (Fallback)
+    // Any touch outside button hitboxes and outside the bottom-left joystick zone
+    // automatically binds to camera look (Mouse), without a fixed bounding box constraint.
+    if (controlElements[TOUCH_MOUSE].touchID == 0) {
+        controlElements[TOUCH_MOUSE].touchID = event->touchID;
+        before_x = touchX;
+        before_y = touchY;
+        touch_x = 0;
+        touch_y = 0;
+        return;
     }
 }
 
