@@ -5,6 +5,8 @@
 #include "pc/configfile.h"
 #include "pc/controller/controller_touchscreen.h"
 
+#include <math.h>
+
 // Same things as djui panel player
 static struct DjuiSlider *sTouchConfigSliderR = NULL;
 static struct DjuiSlider *sTouchConfigSliderG = NULL;
@@ -12,6 +14,20 @@ static struct DjuiSlider *sTouchConfigSliderB = NULL;
 static struct DjuiSlider *sTouchConfigSliderA = NULL;
 static struct DjuiSlider *sTouchConfigSliderS = NULL;
 static struct DjuiCheckbox *sTouchConfigCheckboxH = NULL;
+
+static u32 sCurrentScaleU32 = 10;
+static char sScaleTextBuffer[16];
+
+static char* djui_panel_touch_controls_editor_scale_text(u32 value) {
+    snprintf(sScaleTextBuffer, sizeof(sScaleTextBuffer), "%.1f", (f32)value / 10.0f);
+    return sScaleTextBuffer;
+}
+
+static void djui_panel_touch_controls_editor_scale_changed(UNUSED struct DjuiBase* caller) {
+    if (gSelectedTouchElement != TOUCH_MOUSE) {
+        configControlElements[gSelectedTouchElement].size = (f32)sCurrentScaleU32 / 10.0f;
+    }
+}
 
 static void djui_panel_touch_controls_editor_update_values(struct DjuiBase* caller) {
     struct DjuiSelectionbox* selectionbox = (struct DjuiSelectionbox*)caller;
@@ -27,7 +43,10 @@ static void djui_panel_touch_controls_editor_update_values(struct DjuiBase* call
     sTouchConfigSliderG->value = &configControlElements[*selectionbox->value].g;
     sTouchConfigSliderB->value = &configControlElements[*selectionbox->value].b;
     sTouchConfigSliderA->value = &configControlElements[*selectionbox->value].a;
-    sTouchConfigSliderS->value = &configControlElements[*selectionbox->value].size;
+    sCurrentScaleU32 = (u32)roundf(configControlElements[*selectionbox->value].size * 10.0f);
+    if (sCurrentScaleU32 < 5) sCurrentScaleU32 = 5;
+    if (sCurrentScaleU32 > 30) sCurrentScaleU32 = 30;
+    sTouchConfigSliderS->value = &sCurrentScaleU32;
     sTouchConfigCheckboxH->value = &configControlElements[*selectionbox->value].hidden;
     djui_slider_update_value(&sTouchConfigSliderR->base);
     djui_slider_update_value(&sTouchConfigSliderG->base);
@@ -100,7 +119,11 @@ void djui_panel_touch_controls_editor_create(struct DjuiBase* caller) {
 
         sTouchConfigCheckboxH = djui_checkbox_create(body, "Hidden"/*DLANG(TOUCH_CONTROLS, TOUCH_CONTROLS_HIDE)*/, &configControlElements[gSelectedTouchElement].hidden, djui_panel_touch_controls_editor_update_anchor);
 
-        sTouchConfigSliderS = djui_slider_create(body, DLANG(TOUCH_CONTROLS, TOUCH_CONTROLS_SCALE), &configControlElements[gSelectedTouchElement].size, 1, 2, NULL);
+        sCurrentScaleU32 = (u32)roundf(configControlElements[gSelectedTouchElement].size * 10.0f);
+        if (sCurrentScaleU32 < 5) sCurrentScaleU32 = 5;
+        if (sCurrentScaleU32 > 30) sCurrentScaleU32 = 30;
+        sTouchConfigSliderS = djui_slider_create(body, DLANG(TOUCH_CONTROLS, TOUCH_CONTROLS_SCALE), &sCurrentScaleU32, 5, 30, djui_panel_touch_controls_editor_scale_changed);
+        sTouchConfigSliderS->value_to_text = djui_panel_touch_controls_editor_scale_text;
 
         if (gSelectedTouchElement == TOUCH_MOUSE) {
             djui_base_set_enabled(&sTouchConfigSliderR->base, false);

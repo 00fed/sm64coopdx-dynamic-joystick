@@ -11,6 +11,7 @@
 #include <ultra64.h>
 #include <PR/ultratypes.h>
 #include <PR/gbi.h>
+#include <math.h>
 
 #include "config.h"
 #include "sm64.h"
@@ -45,6 +46,11 @@ s16 touch_cam_last_y = 0;
 // Config
 bool gInTouchConfig = false, gGamepadActive = false;
 enum ConfigControlElementIndex gSelectedTouchElement = TOUCH_MOUSE;
+
+// Dynamic Joystick
+static struct Position sDynamicJoystickBase = { 0, 0 };
+static bool sDynamicJoystickActive = false;
+static SDL_TouchID sJoystickTouchID = 0;
 
 ConfigControlElement configControlElementsDefault[TOUCH_COUNT] = {
 #include "controller_touchscreen_layout.inc"
@@ -167,33 +173,67 @@ void touch_down(struct TouchEvent* event) {
     gGamepadActive = false;
     struct Position pos;
     s32 size;
-    for(u32 i = 0; i < controlElementsLength; i++) {
-        if (controlElements[i].touchID == 0) {
+    s32 touchX = CORRECT_TOUCH_X(event->x);
+    s32 touchY = CORRECT_TOUCH_Y(event->y);
+
+    if (gInTouchConfig) {
+        for (u32 i = 0; i < controlElementsLength; i++) {
+            if (controlElements[i].touchID == 0) {
+                pos = get_pos(&configControlElements[i]);
+                if (pos.y == HIDE_POS) continue;
+                size = (s32)roundf(configControlElements[i].size * 100.0f);
+                if (!TRIGGER_DETECT(size)) continue;
+                controlElements[i].touchID = event->touchID;
+                gSelectedTouchElement = i;
+                break;
+            }
+        }
+        return;
+    }
+
+    // Pass 1: Prioritize Buttons first (A, B, X, Y, Z, L, R, D-pad, Start, Chat, etc.)
+    // Ensures touches on buttons (including those on the left) never get stolen by joystick
+    for (u32 i = 0; i < controlElementsLength; i++) {
+        if (controlElements[i].type == Button && controlElements[i].touchID == 0) {
             pos = get_pos(&configControlElements[i]);
             if (pos.y == HIDE_POS) continue;
-            size = configControlElements[i].size * 100;
-            if (!TRIGGER_DETECT(size)) continue;
-            switch (controlElements[i].type) {
-                case Joystick:
-                    controlElements[i].touchID = event->touchID;
-                    gSelectedTouchElement = i;
-                    if (!gInTouchConfig) {
-                        controlElements[i].joyX = CORRECT_TOUCH_X(event->x) - pos.x;
-                        controlElements[i].joyY = CORRECT_TOUCH_Y(event->y) - pos.y;
-                    }
-                    break;
-                case Mouse:
-                    controlElements[i].touchID = event->touchID;
-                    break;
-                case Button:
-                    controlElements[i].touchID = event->touchID;
-                    gSelectedTouchElement = i;
-                    // messy
-                    if (controlElements[i].buttonID == CHAT_BUTTON && !gInTouchConfig)
-                        djui_interactable_on_key_down(configKeyChat[0]);
-                    if (controlElements[i].buttonID == PLAYERLIST_BUTTON && !gInTouchConfig)
-                        djui_interactable_on_key_down(configKeyPlayerList[0]);
-                    break;
+            size = (s32)roundf(configControlElements[i].size * 100.0f);
+            if (TRIGGER_DETECT(size)) {
+                controlElements[i].touchID = event->touchID;
+                gSelectedTouchElement = i;
+                if (controlElements[i].buttonID == CHAT_BUTTON)
+                    djui_interactable_on_key_down(configKeyChat[0]);
+                if (controlElements[i].buttonID == PLAYERLIST_BUTTON)
+                    djui_interactable_on_key_down(configKeyPlayerList[0]);
+                return;
+            }
+        }
+    }
+
+    // Pass 2: Joystick Activation Zone on the left half of the screen (x < SCREEN_WIDTH_API / 2)
+    // Protected by Touch ID: only activates if joystick is not already locked to an active finger
+    pos = get_pos(&configControlElements[TOUCH_STICK]);
+    if (pos.y != HIDE_POS && sJoystickTouchID == 0 && touchX < (SCREEN_WIDTH_API / 2)) {
+        sJoystickTouchID = event->touchID;
+        controlElements[TOUCH_STICK].touchID = event->touchID;
+        gSelectedTouchElement = TOUCH_STICK;
+        sDynamicJoystickBase.x = touchX;
+        sDynamicJoystickBase.y = touchY;
+        sDynamicJoystickActive = true;
+        controlElements[TOUCH_STICK].joyX = 0;
+        controlElements[TOUCH_STICK].joyY = 0;
+        return;
+    }
+
+    // Pass 3: Mouse / Camera Look on right half or unhandled areas
+    for (u32 i = 0; i < controlElementsLength; i++) {
+        if (controlElements[i].type == Mouse && controlElements[i].touchID == 0) {
+            pos = get_pos(&configControlElements[i]);
+            if (pos.y == HIDE_POS) continue;
+            size = (s32)roundf(configControlElements[i].size * 100.0f);
+            if (TRIGGER_DETECT(size)) {
+                controlElements[i].touchID = event->touchID;
+                return;
             }
         }
     }
@@ -205,7 +245,7 @@ void touch_motion(struct TouchEvent* event) {
     for(u32 i = 0; i < controlElementsLength; i++) {
         pos = get_pos(&configControlElements[i]);
         if (pos.y == HIDE_POS) continue;
-        size = configControlElements[i].size * 100;
+        size = (s32)roundf(configControlElements[i].size * 100.0f);
         if (gInTouchConfig) {
             if (controlElements[i].touchID == event->touchID && controlElements[i].type != Mouse && gSelectedTouchElement == i) {
                 move_touch_element(event, gSelectedTouchElement);
@@ -215,26 +255,38 @@ void touch_motion(struct TouchEvent* event) {
                 if (controlElements[i].touchID == event->touchID) {
                     s32 x, y;
                     switch (controlElements[i].type) {
-                        case Joystick:
-                            if (configPhantomTouch && !TRIGGER_DETECT(size * 6)) {
-                                controlElements[i].joyX = 0;
-                                controlElements[i].joyY = 0;
-                                controlElements[i].touchID = 0;
+                        case Joystick: {
+                            // Touch ID protection: only the locked touch ID can move the joystick
+                            if (event->touchID != sJoystickTouchID || !sDynamicJoystickActive) {
                                 break;
                             }
-                            x = CORRECT_TOUCH_X(event->x) - pos.x;
-                            y = CORRECT_TOUCH_Y(event->y) - pos.y;
-                            if (pos.x + size / 2 < CORRECT_TOUCH_X(event->x))
+                            struct Position center = sDynamicJoystickBase;
+                            if (configPhantomTouch) {
+                                s32 touchX = CORRECT_TOUCH_X(event->x);
+                                s32 touchY = CORRECT_TOUCH_Y(event->y);
+                                if (abs(touchX - center.x) > (size * 6) / 2 || abs(touchY - center.y) > (size * 6) / 2) {
+                                    controlElements[i].joyX = 0;
+                                    controlElements[i].joyY = 0;
+                                    controlElements[i].touchID = 0;
+                                    sDynamicJoystickActive = false;
+                                    sJoystickTouchID = 0;
+                                    break;
+                                }
+                            }
+                            x = CORRECT_TOUCH_X(event->x) - center.x;
+                            y = CORRECT_TOUCH_Y(event->y) - center.y;
+                            if (x > size / 2)
                                 x = size / 2;
-                            if (pos.x - size / 2 > CORRECT_TOUCH_X(event->x))
+                            if (x < -size / 2)
                                 x = - size / 2;
-                            if (pos.y + size / 2 < CORRECT_TOUCH_Y(event->y))
+                            if (y > size / 2)
                                 y = size / 2;
-                            if (pos.y - size / 2 > CORRECT_TOUCH_Y(event->y))
+                            if (y < -size / 2)
                                 y = - size / 2;
                             controlElements[i].joyX = x;
                             controlElements[i].joyY = y;
                             break;
+                        }
                         case Mouse:
                             if (configPhantomTouch && !TRIGGER_DETECT(size)) {
                                 touch_x = before_x = 0;
@@ -260,23 +312,13 @@ void touch_motion(struct TouchEvent* event) {
                             }
                             break;
                     }
-                } else if ((TRIGGER_DETECT(size) || (configPhantomTouch && TRIGGER_DETECT(size * 6) && controlElements[i].type == Joystick)) && (controlElements[TOUCH_MOUSE].touchID != event->touchID || !configFreeCameraMouse) && configSlideTouch) {
-                    if (configPhantomTouch)
-                        controlElements[i].touchID = event->touchID;
-                    switch (controlElements[i].type) {
-                        case Joystick:
-                            break;
-                        case Mouse:
-                            break;
-                        case Button:
-                            controlElements[i].slideTouch = 1;
-                            controlElements[i].touchID = event->touchID;
-                            if (controlElements[i].buttonID == CHAT_BUTTON)
-                                djui_interactable_on_key_down(configKeyChat[0]);
-                            if (controlElements[i].buttonID == PLAYERLIST_BUTTON)
-                                djui_interactable_on_key_down(configKeyPlayerList[0]);
-                            break;
-                    }
+                } else if (controlElements[i].type == Button && TRIGGER_DETECT(size) && (controlElements[TOUCH_MOUSE].touchID != event->touchID || !configFreeCameraMouse) && configSlideTouch) {
+                    controlElements[i].slideTouch = 1;
+                    controlElements[i].touchID = event->touchID;
+                    if (controlElements[i].buttonID == CHAT_BUTTON)
+                        djui_interactable_on_key_down(configKeyChat[0]);
+                    if (controlElements[i].buttonID == PLAYERLIST_BUTTON)
+                        djui_interactable_on_key_down(configKeyPlayerList[0]);
                 }
             }
         }
@@ -291,6 +333,8 @@ static void handle_touch_up(u32 i) { // separated for when the layout changes
         case Joystick:
             controlElements[i].joyX = 0;
             controlElements[i].joyY = 0;
+            sDynamicJoystickActive = false;
+            sJoystickTouchID = 0;
             break;
         case Mouse:
             touch_x = before_x = 0;
@@ -310,12 +354,16 @@ static void handle_touch_up(u32 i) { // separated for when the layout changes
 void touch_up(struct TouchEvent* event) {
     for(u32 i = 0; i < controlElementsLength; i++) {
         if (controlElements[i].touchID == event->touchID) {
+            // Touch ID protection: only the locked touch ID can release the joystick
+            if (controlElements[i].type == Joystick && event->touchID != sJoystickTouchID) {
+                continue;
+            }
             handle_touch_up(i);
         }
     }
 }
 
-static void render_texture(const Texture *texture, s32 x, s32 y, u32 w, u32 h, s32 scaling, u8 r, u8 g, u8 b, u8 a) {
+static void render_texture(const Texture *texture, s32 x, s32 y, u32 w, u32 h, f32 scale, u8 r, u8 g, u8 b, u8 a) {
     gSPClearGeometryMode(gDisplayListHead++, G_LIGHTING);
     gDPSetCombineMode(gDisplayListHead++, G_CC_FADEA, G_CC_FADEA);
     gDPSetRenderMode(gDisplayListHead++, G_RM_XLU_SURF, G_RM_XLU_SURF2);
@@ -324,9 +372,12 @@ static void render_texture(const Texture *texture, s32 x, s32 y, u32 w, u32 h, s
     gDPLoadTextureBlock(gDisplayListHead++, texture, G_IM_FMT_RGBA, G_IM_SIZ_16b, w, h, 0, G_TX_CLAMP, G_TX_CLAMP, 0, 0, 0, 0);
     gDPSetEnvColor(gDisplayListHead++, r, g, b, a);
 
-    s32 half_w = (w << scaling);
-    s32 half_h = (h << scaling);
-    gSPTextureRectangle(gDisplayListHead++, x - half_w, y - half_h, x + half_w, y + half_h, G_TX_RENDERTILE, 0, 0, 4 << (9 - scaling), 1 << (11 - scaling));
+    if (scale <= 0.01f) scale = 0.01f;
+    s32 half_w = (s32)roundf(w * 4.0f * scale);
+    s32 half_h = (s32)roundf(h * 4.0f * scale);
+    s32 dsdx = (s32)roundf(512.0f / scale);
+    s32 dtdy = dsdx;
+    gSPTextureRectangle(gDisplayListHead++, x - half_w, y - half_h, x + half_w, y + half_h, G_TX_RENDERTILE, 0, 0, dsdx, dtdy);
     gSPTexture(gDisplayListHead++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_OFF);
     gDPSetCombineMode(gDisplayListHead++, G_CC_SHADE, G_CC_SHADE);
 }
@@ -338,7 +389,7 @@ void render_touch_controls(void) {
     struct Position pos;
     struct Position stick;
     Colors color;
-    s32 size;
+    f32 size;
     f32 normalizedVectorMultiplier;
     
     create_dl_ortho_matrix();
@@ -362,16 +413,17 @@ void render_touch_controls(void) {
                     stick.x = (controlElements[i].joyX * normalizedVectorMultiplier * 2);
                     stick.y = (controlElements[i].joyY * normalizedVectorMultiplier * 2);
                 }
-                render_texture(touch_textures[TEXTURE_TOUCH_JOYSTICK_BASE], pos.x, pos.y, 32, 32, 1 + size, color.r, color.g, color.b, color.a);
-                render_texture(touch_textures[TEXTURE_TOUCH_JOYSTICK], pos.x + stick.x, pos.y + stick.y, 16, 16, 1 + size, color.r, color.g, color.b, color.a);
+                struct Position basePos = (sDynamicJoystickActive && !gInTouchConfig) ? sDynamicJoystickBase : pos;
+                render_texture(touch_textures[TEXTURE_TOUCH_JOYSTICK_BASE], basePos.x, basePos.y, 32, 32, size, color.r, color.g, color.b, color.a);
+                render_texture(touch_textures[TEXTURE_TOUCH_JOYSTICK], basePos.x + stick.x, basePos.y + stick.y, 16, 16, size, color.r, color.g, color.b, color.a);
                 break;
             case Mouse:
                 break;
             case Button:
                 if (!controlElements[i].touchID || gInTouchConfig || gDjuiPanelPauseCreated) {
-                    render_texture(touch_textures[controlElements[i].buttonTexture.buttonUp], pos.x, pos.y, 16, 16, 1 + size, color.r, color.g, color.b, color.a);
+                    render_texture(touch_textures[controlElements[i].buttonTexture.buttonUp], pos.x, pos.y, 16, 16, size, color.r, color.g, color.b, color.a);
                 } else {
-                    render_texture(touch_textures[controlElements[i].buttonTexture.buttonDown], pos.x, pos.y, 16, 16, 1 + size, color.r, color.g, color.b, color.a);
+                    render_texture(touch_textures[controlElements[i].buttonTexture.buttonDown], pos.x, pos.y, 16, 16, size, color.r, color.g, color.b, color.a);
                 }
                 break;
         }
@@ -385,6 +437,8 @@ static void touchscreen_init(void) {
         controlElements[i].joyY = 0;
         controlElements[i].slideTouch = 0;
     }
+    sDynamicJoystickActive = false;
+    sJoystickTouchID = 0;
 }
 
 static void touchscreen_read(OSContPad *pad) {
@@ -393,7 +447,7 @@ static void touchscreen_read(OSContPad *pad) {
     if (!gInTouchConfig && !gDjuiPanelPauseCreated) {
         for(u32 i = 0; i < controlElementsLength; i++) {
             pos = get_pos(&configControlElements[i]);
-            size = configControlElements[i].size * 100;
+            size = (s32)roundf(configControlElements[i].size * 100.0f);
             if (pos.y == HIDE_POS) continue;
             switch (controlElements[i].type) {
                 case Joystick:

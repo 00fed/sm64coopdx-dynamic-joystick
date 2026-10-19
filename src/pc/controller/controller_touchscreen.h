@@ -61,7 +61,8 @@ enum ConfigControlElementIndex {
 };
 
 typedef struct {
-    u32 x, y, size;
+    u32 x, y;
+    f32 size;
     bool hidden;
     enum ConfigControlElementAnchor anchor;
     u32 r, g, b, a;

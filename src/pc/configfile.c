@@ -859,7 +859,16 @@ static void configfile_load_internal(const char *filename, bool* error) {
                             if (numTokens < 10) break;
                             sscanf(tokens[1], "%04x", &option->touchValues->x);
                             sscanf(tokens[2], "%04x", &option->touchValues->y);
-                            sscanf(tokens[3], "%04x", &option->touchValues->size);
+                            if (strchr(tokens[3], '.') != NULL) {
+                                sscanf(tokens[3], "%f", &option->touchValues->size);
+                            } else {
+                                unsigned int oldSize = 1;
+                                if (sscanf(tokens[3], "%x", &oldSize) == 1) {
+                                    option->touchValues->size = (f32)oldSize;
+                                } else {
+                                    option->touchValues->size = 1.0f;
+                                }
+                            }
                             if (strcmp(tokens[4], "true") == 0) {
                                 option->touchValues->hidden = true;
                             } else {
@@ -1025,7 +1034,7 @@ static void configfile_save_option(FILE *file, const struct ConfigOption *option
             break;
 #ifdef TOUCH_CONTROLS
         case CONFIG_TYPE_TOUCH:
-            fprintf(file, "%s %04x %04x %04x %s %04x %02x %02x %02x %02x\n", option->name, option->touchValues->x, option->touchValues->y, option->touchValues->size, option->touchValues->hidden ? "true" : "false", option->touchValues->anchor, option->touchValues->r, option->touchValues->g, option->touchValues->b, option->touchValues->a);
+            fprintf(file, "%s %04x %04x %.2f %s %04x %02x %02x %02x %02x\n", option->name, option->touchValues->x, option->touchValues->y, option->touchValues->size, option->touchValues->hidden ? "true" : "false", option->touchValues->anchor, option->touchValues->r, option->touchValues->g, option->touchValues->b, option->touchValues->a);
             break;
 #endif
         case CONFIG_TYPE_STRING:

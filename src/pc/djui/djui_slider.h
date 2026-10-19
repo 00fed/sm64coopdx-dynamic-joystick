@@ -12,6 +12,7 @@ struct DjuiSlider {
     unsigned int min;
     unsigned int max;
     bool updateRectValueColor;
+    char* (*value_to_text)(u32 value);
 };
 
 struct DjuiSlider* djui_slider_create(struct DjuiBase* parent, const char* message, unsigned int* value, unsigned int min, unsigned int max, void (*on_value_change)(struct DjuiBase*));

@@ -1,4 +1,4 @@
-LOCAL_PATH := $(realpath $(call my-dir))
+LOCAL_PATH := $(call my-dir)
 
 # Check Arch
 VALID_ARCH := 0

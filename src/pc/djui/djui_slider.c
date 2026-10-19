@@ -50,7 +50,11 @@ void djui_slider_update_value(struct DjuiBase* base) {
     djui_base_set_size(&slider->rectValue->base, ((f32)*value - min) / ((f32)max - min), 1.0f);
 
     char textStr[16];
-    snprintf(textStr, sizeof(textStr), "%u", *value);
+    if (slider->value_to_text != NULL) {
+        snprintf(textStr, sizeof(textStr), "%s", slider->value_to_text(*value));
+    } else {
+        snprintf(textStr, sizeof(textStr), "%u", *value);
+    }
     djui_text_set_text(slider->textValueForeground, textStr);
     djui_text_set_text(slider->textValueBackground, textStr);
 }
