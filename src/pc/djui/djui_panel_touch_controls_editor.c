@@ -31,23 +31,26 @@ static void djui_panel_touch_controls_editor_scale_changed(UNUSED struct DjuiBas
 
 static void djui_panel_touch_controls_editor_update_values(struct DjuiBase* caller) {
     struct DjuiSelectionbox* selectionbox = (struct DjuiSelectionbox*)caller;
-    bool enabled = *selectionbox->value != TOUCH_MOUSE ? true : false;
+    if (*selectionbox->value >= TOUCH_COUNT) {
+        *selectionbox->value = 0;
+    }
+    gSelectedTouchElement = *selectionbox->value;
+    bool enabled = (gSelectedTouchElement != TOUCH_MOUSE);
     djui_base_set_enabled(&sTouchConfigSliderR->base, enabled);
     djui_base_set_enabled(&sTouchConfigSliderG->base, enabled);
     djui_base_set_enabled(&sTouchConfigSliderB->base, enabled);
     djui_base_set_enabled(&sTouchConfigSliderA->base, enabled);
     djui_base_set_enabled(&sTouchConfigSliderS->base, enabled);
     djui_base_set_enabled(&sTouchConfigCheckboxH->base, enabled);
-
-    sTouchConfigSliderR->value = &configControlElements[*selectionbox->value].r;
-    sTouchConfigSliderG->value = &configControlElements[*selectionbox->value].g;
-    sTouchConfigSliderB->value = &configControlElements[*selectionbox->value].b;
-    sTouchConfigSliderA->value = &configControlElements[*selectionbox->value].a;
-    sCurrentScaleU32 = (u32)roundf(configControlElements[*selectionbox->value].size * 10.0f);
+    sTouchConfigSliderR->value = &configControlElements[gSelectedTouchElement].r;
+    sTouchConfigSliderG->value = &configControlElements[gSelectedTouchElement].g;
+    sTouchConfigSliderB->value = &configControlElements[gSelectedTouchElement].b;
+    sTouchConfigSliderA->value = &configControlElements[gSelectedTouchElement].a;
+    sCurrentScaleU32 = (u32)roundf(configControlElements[gSelectedTouchElement].size * 10.0f);
     if (sCurrentScaleU32 < 5) sCurrentScaleU32 = 5;
     if (sCurrentScaleU32 > 30) sCurrentScaleU32 = 30;
     sTouchConfigSliderS->value = &sCurrentScaleU32;
-    sTouchConfigCheckboxH->value = &configControlElements[*selectionbox->value].hidden;
+    sTouchConfigCheckboxH->value = &configControlElements[gSelectedTouchElement].hidden;
     djui_slider_update_value(&sTouchConfigSliderR->base);
     djui_slider_update_value(&sTouchConfigSliderG->base);
     djui_slider_update_value(&sTouchConfigSliderB->base);
@@ -72,6 +75,7 @@ static void djui_panel_touch_controls_editor_move(struct DjuiBase* caller) {
     djui_base_set_alignment(&panel->base, DJUI_HALIGN_CENTER, DJUI_VALIGN_TOP);
     djui_base_set_color(&panel->base, 0, 0, 0, 0);
     djui_base_set_border_color(&panel->base, 0, 0, 0, 0);
+    djui_base_set_enabled(&panel->base, false);
     djui_panel_add(caller, panel, NULL);
 }
 

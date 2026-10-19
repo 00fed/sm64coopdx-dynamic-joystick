@@ -325,16 +325,18 @@ void touch_motion(struct TouchEvent* event) {
     }
 }
 
-static void handle_touch_up(u32 i) { // separated for when the layout changes
+static void handle_touch_up(u32 i) { 
     controlElements[i].touchID = 0;
+    if (controlElements[i].type == Joystick) {
+        controlElements[i].joyX = 0;
+        controlElements[i].joyY = 0;
+        sDynamicJoystickActive = false;
+        sJoystickTouchID = 0;
+    }
     struct Position pos = get_pos(&configControlElements[i]);
     if (pos.y == HIDE_POS) { return; }
     switch (controlElements[i].type) {
         case Joystick:
-            controlElements[i].joyX = 0;
-            controlElements[i].joyY = 0;
-            sDynamicJoystickActive = false;
-            sJoystickTouchID = 0;
             break;
         case Mouse:
             touch_x = before_x = 0;
@@ -352,10 +354,9 @@ static void handle_touch_up(u32 i) { // separated for when the layout changes
 }
 
 void touch_up(struct TouchEvent* event) {
-    for(u32 i = 0; i < controlElementsLength; i++) {
+    for (u32 i = 0; i < controlElementsLength; i++) {
         if (controlElements[i].touchID == event->touchID) {
-            // Touch ID protection: only the locked touch ID can release the joystick
-            if (controlElements[i].type == Joystick && event->touchID != sJoystickTouchID) {
+            if (!gInTouchConfig && controlElements[i].type == Joystick && sJoystickTouchID != 0 && event->touchID != sJoystickTouchID) {
                 continue;
             }
             handle_touch_up(i);
