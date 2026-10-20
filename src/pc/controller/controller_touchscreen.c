@@ -222,11 +222,34 @@ void touch_down(struct TouchEvent* event) {
     pos = get_pos(&configControlElements[TOUCH_STICK]);
     if (pos.y != HIDE_POS && sJoystickTouchID == 0 &&
         touchX < (SCREEN_WIDTH_API / 2) && touchY > (SCREEN_HEIGHT_API / 2)) {
+        
+        // 1. Joystick'in dinamik yarıçapını hesapla (Önceki kodlarda yarıçap 128 base alınmıştı)
+        f32 scale = configControlElements[TOUCH_STICK].size;
+        if (scale <= 0.01f) scale = 0.01f;
+        s32 pad = (s32)(128.0f * scale); 
+
+        s32 baseX = touchX;
+        s32 baseY = touchY;
+
+        // 2. Yatay (X) Eksenini Kelepçele
+        // LEFT_EDGE'den taşmasını engelle (ekranın solu)
+        if (baseX - pad < LEFT_EDGE) baseX = LEFT_EDGE + pad;
+        // Orta çizgiden (sağ çeyrekten) taşmasını engelle
+        if (baseX + pad > (SCREEN_WIDTH_API / 2)) baseX = (SCREEN_WIDTH_API / 2) - pad;
+
+        // 3. Dikey (Y) Eksenini Kelepçele
+        // Orta yatay çizgiden (üst çeyrekten) taşmasını engelle
+        if (baseY - pad < (SCREEN_HEIGHT_API / 2)) baseY = (SCREEN_HEIGHT_API / 2) + pad;
+        // Ekranın en altından taşmasını engelle
+        if (baseY + pad > SCREEN_HEIGHT_API) baseY = SCREEN_HEIGHT_API - pad;
+
         sJoystickTouchID = event->touchID;
         controlElements[TOUCH_STICK].touchID = event->touchID;
         gSelectedTouchElement = TOUCH_STICK;
-        sDynamicJoystickBase.x = touchX;
-        sDynamicJoystickBase.y = touchY;
+        
+        // 4. Sınırlandırılmış güvenli koordinatları ata
+        sDynamicJoystickBase.x = baseX;
+        sDynamicJoystickBase.y = baseY;
         sDynamicJoystickActive = true;
         controlElements[TOUCH_STICK].joyX = 0;
         controlElements[TOUCH_STICK].joyY = 0;
