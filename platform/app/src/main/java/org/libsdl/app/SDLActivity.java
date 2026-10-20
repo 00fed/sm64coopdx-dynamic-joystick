@@ -1801,26 +1801,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
 
         Activity activity = (Activity)getContext();
 
-        if (permission.equals("android.permission.MANAGE_EXTERNAL_STORAGE")) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                if (Environment.isExternalStorageManager()) {
-                    nativePermissionResult(requestCode, true);
-                } else {
-                    //request for the permission
-                    try {
-                        Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                        intent.addCategory("android.intent.category.DEFAULT");
-                        intent.setData(Uri.parse(String.format("package:%s",activity.getApplicationContext().getPackageName())));
-                        activity.startActivityForResult(intent, 2296);
-                    } catch (Exception e) {
-                        Intent intent = new Intent();
-                        intent.setAction(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
-                        activity.startActivityForResult(intent, 2296);
-                    }
-                }
-            } else {
-                nativePermissionResult(requestCode, false);
-            }
+        if (permission.equals("android.permission.MANAGE_EXTERNAL_STORAGE") ||
+            permission.equals("android.permission.WRITE_EXTERNAL_STORAGE")) {
+            // Broad storage permission flow disabled in favor of Storage Access Framework (SAF)
+            nativePermissionResult(requestCode, false);
+            return;
         } else {
             if (activity.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
                 activity.requestPermissions(new String[]{permission}, requestCode);

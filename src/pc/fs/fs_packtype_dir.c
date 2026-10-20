@@ -54,20 +54,17 @@ static bool pack_dir_is_dir(void *pack, const char *fname) {
     snprintf(path, sizeof(path), "%s/%s", (const char *)pack, fname);
     return fs_sys_file_exists(path);
 }
-
+extern FILE *saf_fopen(const char *path, const char *mode);
 static fs_file_t *pack_dir_open(void *pack, const char *vpath) {
     char path[SYS_MAX_PATH];
     snprintf(path, sizeof(path), "%s/%s", (const char *)pack, vpath);
-
-    FILE *f = fopen(path, "rb");
+    // Intercept fopen with saf_fopen to resolve SAF File Descriptors via fdopen()
+    FILE *f = saf_fopen(path, "rb");
     if (!f) return NULL;
-
     fs_file_t *fsfile = malloc(sizeof(fs_file_t));
     if (!fsfile) { fclose(f); return NULL; }
-
     fsfile->parent = NULL;
     fsfile->handle = f;
-
     return fsfile;
 }
 
