@@ -31,6 +31,7 @@ static void djui_panel_touch_controls_editor_scale_changed(UNUSED struct DjuiBas
 
 static void djui_panel_touch_controls_editor_update_values(struct DjuiBase* caller) {
     struct DjuiSelectionbox* selectionbox = (struct DjuiSelectionbox*)caller;
+    // Ensure index remains strictly within valid bounds [0, TOUCH_COUNT - 1]
     if (*selectionbox->value >= TOUCH_COUNT) {
         *selectionbox->value = 0;
     }
