@@ -4,6 +4,7 @@
 #include "rom_checker.h"
 #include "apparition.inc.c"
 #include "utils/misc.h"
+#include <unistd.h>
 
 #define ROM_ASSET_LOAD_DATA(bits) for (u##bits *data = asset->ptr; asset->cursor < asset->segmentedSize; data++) { *data = READ##bits(asset); }
 
@@ -165,26 +166,28 @@ static void rom_asset_load(struct RomAsset* asset) {
     }
 }
 
+extern int saf_get_rom_fd(void);
 void rom_assets_load(void) {
     LOG_INFO("loading asset");
-
-    assert(fs_sys_file_exists(gRomFilename)); // Should never be false
-
-    sRomFile = fopen(gRomFilename, "rb");
-
+    int saf_fd = saf_get_rom_fd();
+    if (saf_fd >= 0) {
+        // Direct read via Android SAF ParcelFileDescriptor
+        sRomFile = fdopen(dup(saf_fd), "rb");
+    } else {
+        assert(fs_sys_file_exists(gRomFilename));
+        sRomFile = fopen(gRomFilename, "rb");
+    }
+    assert(sRomFile != NULL);
     while (sRomAssets) {
         rom_asset_load(sRomAssets);
-
         struct RomAsset* next = sRomAssets->next;
         free(sRomAssets);
         sRomAssets = next;
     }
-
     if (sCurrentSegmentMemory) {
         free(sCurrentSegmentMemory);
         sCurrentSegmentMemory = NULL;
     }
-
     fclose(sRomFile);
 }
 

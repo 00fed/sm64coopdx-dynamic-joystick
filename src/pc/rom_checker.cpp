@@ -59,17 +59,8 @@ static bool is_rom_valid(const std::string romPath) {
 
     for (VanillaMD5 *md5 = sVanillaMD5; md5->localizationName != NULL; md5++) {
         if (md5->md5 == ss.str()) {
-            std::string destPath = fs_get_write_path("") + std::string("baserom.") + md5->localizationName + ".z64";
-
-            // Copy the rom to the user path
-            if (romPath != destPath && !std::filesystem::exists(std::filesystem::path(destPath))) {
-                std::filesystem::copy_file(
-                    std::filesystem::path(romPath),
-                    std::filesystem::path(destPath)
-                );
-            }
-
-            snprintf(gRomFilename, SYS_MAX_PATH, "%s", destPath.c_str()); // Load the copied rom
+                        // Reference the ROM directly in place without copying to internal storage
+            snprintf(gRomFilename, SYS_MAX_PATH, "%s", romPath.c_str());
             gRomIsValid = true;
             return true;
         }
@@ -93,7 +84,14 @@ void legacy_folder_handler(void) {
     rename_tmp_folder();
 }
 
+extern "C" int saf_get_rom_fd(void);
+
 bool main_rom_handler(void) {
+    if (saf_get_rom_fd() >= 0) {
+        gRomIsValid = true;
+        return true;
+    }
+    
     if (scan_path_for_rom(fs_get_write_path(""))) { return true; }
     scan_path_for_rom(sys_exe_path_dir());
     return gRomIsValid;

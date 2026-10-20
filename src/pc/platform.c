@@ -303,21 +303,12 @@ static void sys_fatal_impl(const char *msg) {
 
 #ifdef __ANDROID__
 const char *get_gamedir(void) {
-    SDL_bool privileged_write = SDL_FALSE, privileged_manage = SDL_FALSE;
-    static char gamedir_unprivileged[SYS_MAX_PATH] = { 0 }, gamedir_privileged[SYS_MAX_PATH] = { 0 };
-    const char *basedir_unprivileged = SDL_AndroidGetExternalStoragePath();
-    const char *basedir_privileged = SDL_AndroidGetTopExternalStoragePath();
-
-    snprintf(gamedir_unprivileged, sizeof(gamedir_unprivileged), 
-             "%s", basedir_unprivileged);
-    snprintf(gamedir_privileged, sizeof(gamedir_privileged), 
-             "%s/%s", basedir_privileged, ANDROID_APPNAME);
-
-    //Android 10 and below
-    privileged_write = SDL_AndroidRequestPermission("android.permission.WRITE_EXTERNAL_STORAGE");
-    //Android 11 and up
-    privileged_manage = SDL_AndroidRequestPermission("android.permission.MANAGE_EXTERNAL_STORAGE");
-    return (privileged_write || privileged_manage) ? gamedir_privileged : gamedir_unprivileged;
+    static char gamedir[SYS_MAX_PATH] = { 0 };
+    if (gamedir[0] == '\0') {
+        const char *basedir = SDL_AndroidGetExternalStoragePath();
+        snprintf(gamedir, sizeof(gamedir), "%s", basedir);
+    }
+    return gamedir;
 }
 
 static bool sFilePickerActive = false;
