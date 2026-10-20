@@ -220,13 +220,35 @@ void touch_down(struct TouchEvent* event) {
     }
     // Pass 2: Restrict Dynamic Joystick strictly to the bottom-left quadrant
     pos = get_pos(&configControlElements[TOUCH_STICK]);
+    
+    // 1. Tetikleme alanını ekranın sol 1/3'lük dilimine çekiyoruz
+    // Böylece orta bölgedeki dokunmalar doğrudan kameraya (TOUCH_MOUSE) kalır
     if (pos.y != HIDE_POS && sJoystickTouchID == 0 &&
-        touchX < (SCREEN_WIDTH_API / 2) && touchY > (SCREEN_HEIGHT_API / 2)) {
+        touchX < (SCREEN_WIDTH_API / 3) && touchY > (SCREEN_HEIGHT_API / 2)) {
+        
+        f32 scale = configControlElements[TOUCH_STICK].size;
+        if (scale <= 0.01f) scale = 0.01f;
+        s32 pad = (s32)(128.0f * scale); 
+
+        s32 baseX = touchX;
+        s32 baseY = touchY;
+
+        // 2. Ekranın sol kenarından taşmayı engelle
+        if (baseX - pad < LEFT_EDGE) baseX = LEFT_EDGE + pad;
+        
+        // 3. Sağ sınırı yeni 1/3'lük çizgiye kelepçele
+        if (baseX + pad > (SCREEN_WIDTH_API / 3)) baseX = (SCREEN_WIDTH_API / 3) - pad;
+
+        // Dikey (Y) Eksenini Kelepçele
+        if (baseY - pad < (SCREEN_HEIGHT_API / 2)) baseY = (SCREEN_HEIGHT_API / 2) + pad;
+        if (baseY + pad > SCREEN_HEIGHT_API) baseY = SCREEN_HEIGHT_API - pad;
+
         sJoystickTouchID = event->touchID;
         controlElements[TOUCH_STICK].touchID = event->touchID;
         gSelectedTouchElement = TOUCH_STICK;
-        sDynamicJoystickBase.x = touchX;
-        sDynamicJoystickBase.y = touchY;
+        
+        sDynamicJoystickBase.x = baseX;
+        sDynamicJoystickBase.y = baseY;
         sDynamicJoystickActive = true;
         controlElements[TOUCH_STICK].joyX = 0;
         controlElements[TOUCH_STICK].joyY = 0;

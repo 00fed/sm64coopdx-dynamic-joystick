@@ -75,8 +75,6 @@ static void djui_panel_touch_controls_editor_move(struct DjuiBase* caller) {
     djui_base_set_alignment(&panel->base, DJUI_HALIGN_CENTER, DJUI_VALIGN_TOP);
     djui_base_set_color(&panel->base, 0, 0, 0, 0);
     djui_base_set_border_color(&panel->base, 0, 0, 0, 0);
-    // Hide panel from DJUI hierarchy hit testing so it cannot intercept corner touches
-    djui_base_set_visible(&panel->base, false);
     djui_panel_add(caller, panel, NULL);
 }
 

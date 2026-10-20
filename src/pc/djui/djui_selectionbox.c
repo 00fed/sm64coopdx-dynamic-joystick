@@ -74,18 +74,13 @@ void djui_selectionbox_update_value(struct DjuiBase* base) {
 
 static void djui_selectionbox_on_cursor_down_begin(struct DjuiBase* base, UNUSED bool inputCursor) {
     struct DjuiSelectionbox* selectionbox = (struct DjuiSelectionbox*)base;
-    f32 rectX = selectionbox->rect->base.elem.x;
-    f32 rectW = selectionbox->rect->base.elem.width;
-    if (gCursorX >= rectX && gCursorX <= rectX + rectW) {
-        // Check if cursor is on the right half or specifically on the forward arrow icon
-        f32 forwardArrowX = selectionbox->rectImage2 ? selectionbox->rectImage2->base.elem.x : (rectX + rectW * 0.5f);
-        if (gCursorX >= forwardArrowX || ((gCursorX - rectX) / rectW > 0.5f)) {
-            // Forward (>) increment across choiceCount
+    f32 x = selectionbox->rect->base.elem.x;
+    if (gCursorX >= x) {
+        if ((gCursorX - x) / selectionbox->rect->base.elem.width > 0.5f) {
             *selectionbox->value = (*selectionbox->value + 1) % selectionbox->choiceCount;
         } else {
-            // Backward (<) decrement
-            s32 value = (s32)(*selectionbox->value) - 1;
-            *selectionbox->value = (value < 0) ? (selectionbox->choiceCount - 1) : (u32)value;
+            s32 value = *selectionbox->value - 1;
+            *selectionbox->value = value < 0 ? selectionbox->choiceCount - 1 : value;
         }
         djui_selectionbox_update_value(base);
         if (base != NULL && base->interactable != NULL && base->interactable->on_value_change != NULL) {
